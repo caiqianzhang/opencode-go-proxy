@@ -137,8 +137,21 @@ wire_api = "responses"
 experimental_bearer_token = "<client token>"
 ```
 
-脚本会优先复用 `~/.codex/models.newapi.json` 或 `~/.codex/models.json` 作为模型目录；
-如果没有，可用 `--catalog /path/to/models.json` 指定。备份位于
+脚本会优先复用 `~/.codex/models.newapi.json` 或 `~/.codex/models.json` 作为模型目录。
+如果两者都不存在，会安装内置的最小目录
+[assets/models.deepseek-v4.1-flash.json](assets/models.deepseek-v4.1-flash.json)
+到 `~/.codex/models.opencode-go.json`，其中包含 `multi_agent_version = "v2"`。
+
+这个最小目录不包含约 18KB 的完整 `base_instructions`，只提供必要元数据和一段短指令模板；
+因此已有完整模型目录时会优先使用已有目录，内置版本只作为新环境的兜底。
+
+需要强制刷新内置目录时使用：
+
+```bash
+scripts/setup.sh --mode remote --install-catalog ...
+```
+
+也可以用 `--catalog /path/to/models.json` 指定自己的目录。备份位于
 `~/.codex/backup-opencode-go-proxy/`，其中 `original` 始终保留首次安装前的配置。
 
 ### 监听地址

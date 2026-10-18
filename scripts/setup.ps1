@@ -37,6 +37,59 @@ V6mPV6qSd7KRpa9IV4MBR1fb6AHclfGNmIyrhSSnlaucP7AhOipfK1o0VNgiDTce
 -----END CERTIFICATE-----
 '@
 
+$BundledCatalogJson = @'
+{
+  "models": [
+    {
+      "slug": "deepseek-v4.1-flash",
+      "prefer_websockets": false,
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text",
+      "input_modalities": ["text", "image"],
+      "supports_image_detail_original": true,
+      "truncation_policy": {"mode": "tokens", "limit": 10000},
+      "supports_parallel_tool_calls": true,
+      "tool_mode": null,
+      "multi_agent_version": "v2",
+      "use_responses_lite": false,
+      "include_skills_usage_instructions": false,
+      "auto_review_model_override": null,
+      "context_window": 1048576,
+      "max_context_window": 1048576,
+      "effective_context_window_percent": 95,
+      "auto_compact_token_limit": null,
+      "comp_hash": "3000",
+      "reasoning_summary_format": "experimental",
+      "default_reasoning_summary": "none",
+      "display_name": "deepseek-v4.1-flash",
+      "description": "Local New API model (metadata: default)",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        {"effort": "low", "description": "Fast responses with lighter reasoning"},
+        {"effort": "high", "description": "Extra high reasoning depth for complex problems"},
+        {"effort": "max", "description": "Maximum reasoning depth for the hardest problems"}
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "minimal_client_version": "0.144.0",
+      "supported_in_api": true,
+      "availability_nux": null,
+      "upgrade": null,
+      "priority": 1,
+      "experimental_supported_tools": [],
+      "supports_search_tool": true,
+      "default_service_tier": null,
+      "supports_reasoning_summaries": true,
+      "model_messages": {
+        "instructions_template": "You are Codex, an AI coding agent. Follow the user instructions and use the provided tools carefully."
+      }
+    }
+  ]
+}
+'@
+
 function Write-Ok { param($Message) Write-Host "[OK] " -ForegroundColor Green -NoNewline; Write-Host $Message }
 function Write-Warn2 { param($Message) Write-Host "[!]  " -ForegroundColor Yellow -NoNewline; Write-Host $Message }
 function Write-Head { param($Message) Write-Host ''; Write-Host $Message -ForegroundColor White }
@@ -46,6 +99,7 @@ $Mode = $env:SETUP_MODE
 $BaseUrl = if ($env:SETUP_BASE_URL) { $env:SETUP_BASE_URL } else { $DefaultRemoteBaseUrl }
 $Token = $env:PROXY_CLIENT_TOKEN
 $Catalog = $env:SETUP_CATALOG
+$InstallCatalog = ($env:SETUP_INSTALL_CATALOG -eq '1')
 $Yes = ($env:SETUP_YES -eq '1')
 $SkipTest = ($env:SETUP_SKIP_TEST -eq '1')
 
@@ -55,10 +109,11 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '--base-url' { if ($i + 1 -ge $args.Count) { Die '--base-url requires a value' }; $BaseUrl = $args[$i + 1]; $i++ }
         '--token' { if ($i + 1 -ge $args.Count) { Die '--token requires a value' }; $Token = $args[$i + 1]; $i++ }
         '--catalog' { if ($i + 1 -ge $args.Count) { Die '--catalog requires a value' }; $Catalog = $args[$i + 1]; $i++ }
+        '--install-catalog' { $InstallCatalog = $true }
         '--yes' { $Yes = $true }
         '--skip-test' { $SkipTest = $true }
-        '-h' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--yes] [--skip-test]'; return }
-        '--help' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--yes] [--skip-test]'; return }
+        '-h' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--install-catalog] [--yes] [--skip-test]'; return }
+        '--help' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--install-catalog] [--yes] [--skip-test]'; return }
         default { Die "Unknown argument: $($args[$i])" }
     }
 }
@@ -67,6 +122,24 @@ function Write-Utf8NoBom {
     param([string]$Path, [string]$Text)
     $utf8 = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($Path, $Text, $utf8)
+}
+
+function Resolve-Catalog {
+    param([bool]$Force)
+    $bundled = Join-Path $CodexHomeDir 'models.opencode-go.json'
+    if (-not $Force) {
+        foreach ($name in @('models.newapi.json', 'models.json')) {
+            $candidate = Join-Path $CodexHomeDir $name
+            if (Test-Path $candidate) { return $candidate }
+        }
+        if (Test-Path $bundled) { return $bundled }
+    }
+    New-Item -ItemType Directory -Path $CodexHomeDir -Force | Out-Null
+    if (Test-Path $bundled) {
+        Copy-Item -LiteralPath $bundled -Destination "$bundled.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')" -Force
+    }
+    Write-Utf8NoBom $bundled $BundledCatalogJson
+    return $bundled
 }
 
 function Backup-Config {
@@ -295,9 +368,7 @@ if (-not $Token) { Die 'token 不能为空。' }
 if (-not $SkipTest) { Test-Remote $BaseUrl $Token }
 Trust-IpCertificate $BaseUrl
 if (-not $Catalog) {
-    $candidate = Join-Path $CodexHomeDir 'models.newapi.json'
-    if (-not (Test-Path $candidate)) { $candidate = Join-Path $CodexHomeDir 'models.json' }
-    if (Test-Path $candidate) { $Catalog = $candidate }
+    $Catalog = Resolve-Catalog $InstallCatalog
 }
 Backup-Config 'remote' $BaseUrl
 Update-Config $BaseUrl $Token $Catalog

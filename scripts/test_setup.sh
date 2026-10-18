@@ -49,4 +49,24 @@ grep -q '^base_url = "https://example.test/second/v1"$' "${CODEX_HOME}/config.to
 bash "${SETUP}" --mode restore --yes >/tmp/opencode-setup-test-restore.log
 cmp -s "${CODEX_HOME}/config.toml" "${TMP_DIR}/original.toml"
 
+# Without an existing catalog, the bundled minimal catalog is installed.
+rm "${CODEX_HOME}/models.json"
+bash "${SETUP}" --mode remote \
+  --base-url "https://example.test/bundled/v1" \
+  --token "bundled-token" \
+  --skip-test --yes >/tmp/opencode-setup-test-bundled.log
+
+[ -f "${CODEX_HOME}/models.opencode-go.json" ]
+grep -q '"slug": "deepseek-v4.1-flash"' "${CODEX_HOME}/models.opencode-go.json"
+grep -q '"multi_agent_version": "v2"' "${CODEX_HOME}/models.opencode-go.json"
+grep -q "^model_catalog_json = \"${CODEX_HOME}/models.opencode-go.json\"$" "${CODEX_HOME}/config.toml"
+
+# --install-catalog forces the bundled catalog even when another one exists.
+printf '{"models":[]}\n' > "${CODEX_HOME}/models.json"
+bash "${SETUP}" --mode remote \
+  --base-url "https://example.test/forced/v1" \
+  --token "forced-token" \
+  --install-catalog --skip-test --yes >/tmp/opencode-setup-test-forced.log
+grep -q "^model_catalog_json = \"${CODEX_HOME}/models.opencode-go.json\"$" "${CODEX_HOME}/config.toml"
+
 echo "setup.sh tests passed"

@@ -47,6 +47,59 @@ V6mPV6qSd7KRpa9IV4MBR1fb6AHclfGNmIyrhSSnlaucP7AhOipfK1o0VNgiDTce
 4ky9txOQjw==
 -----END CERTIFICATE-----'
 
+# Small catalog for a fresh CODEX_HOME. It contains only the model metadata
+# Codex needs (including multi_agent_version=v2), not the full Codex prompt.
+BUNDLED_CATALOG_JSON='{
+  "models": [
+    {
+      "slug": "deepseek-v4.1-flash",
+      "prefer_websockets": false,
+      "support_verbosity": true,
+      "default_verbosity": "low",
+      "apply_patch_tool_type": "freeform",
+      "web_search_tool_type": "text",
+      "input_modalities": ["text", "image"],
+      "supports_image_detail_original": true,
+      "truncation_policy": {"mode": "tokens", "limit": 10000},
+      "supports_parallel_tool_calls": true,
+      "tool_mode": null,
+      "multi_agent_version": "v2",
+      "use_responses_lite": false,
+      "include_skills_usage_instructions": false,
+      "auto_review_model_override": null,
+      "context_window": 1048576,
+      "max_context_window": 1048576,
+      "effective_context_window_percent": 95,
+      "auto_compact_token_limit": null,
+      "comp_hash": "3000",
+      "reasoning_summary_format": "experimental",
+      "default_reasoning_summary": "none",
+      "display_name": "deepseek-v4.1-flash",
+      "description": "Local New API model (metadata: default)",
+      "default_reasoning_level": "high",
+      "supported_reasoning_levels": [
+        {"effort": "low", "description": "Fast responses with lighter reasoning"},
+        {"effort": "high", "description": "Extra high reasoning depth for complex problems"},
+        {"effort": "max", "description": "Maximum reasoning depth for the hardest problems"}
+      ],
+      "shell_type": "shell_command",
+      "visibility": "list",
+      "minimal_client_version": "0.144.0",
+      "supported_in_api": true,
+      "availability_nux": null,
+      "upgrade": null,
+      "priority": 1,
+      "experimental_supported_tools": [],
+      "supports_search_tool": true,
+      "default_service_tier": null,
+      "supports_reasoning_summaries": true,
+      "model_messages": {
+        "instructions_template": "You are Codex, an AI coding agent. Follow the user instructions and use the provided tools carefully."
+      }
+    }
+  ]
+}'
+
 if [ -t 1 ]; then
   C_RST=$'\033[0m'; C_B=$'\033[1m'; C_RED=$'\033[31m'
   C_GRN=$'\033[32m'; C_YEL=$'\033[33m'; C_DIM=$'\033[2m'
@@ -69,6 +122,7 @@ Usage: setup.sh [options]
   --token TOKEN        client token for remote mode (or PROXY_CLIENT_TOKEN)
   --api-key KEY        OpenCode Go key for local mode (or OPENCODE_GO_API_KEY)
   --catalog PATH       model catalog to set as model_catalog_json
+  --install-catalog    install/refresh the bundled minimal catalog
   --yes                do not ask for confirmation
   --skip-test          skip the remote endpoint check
   -h, --help           show this help
@@ -122,16 +176,39 @@ find_python() {
 }
 
 resolve_catalog() {
-  local requested="$1"
+  local requested="$1" bundled="${CODEX_HOME_DIR}/models.opencode-go.json"
+  local local_asset="${REPO_DIR}/assets/models.deepseek-v4.1-flash.json" payload=""
   if [ -n "$requested" ]; then
     [ -f "$requested" ] || die "model catalog not found: $requested"
     (cd "$(dirname "$requested")" && printf '%s/%s' "$PWD" "$(basename "$requested")")
     return 0
   fi
-  if [ -f "${CODEX_HOME_DIR}/models.newapi.json" ]; then
-    printf '%s' "${CODEX_HOME_DIR}/models.newapi.json"
-  elif [ -f "${CODEX_HOME_DIR}/models.json" ]; then
-    printf '%s' "${CODEX_HOME_DIR}/models.json"
+  if [ "$INSTALL_BUNDLED_CATALOG" -eq 0 ]; then
+    if [ -f "${CODEX_HOME_DIR}/models.newapi.json" ]; then
+      printf '%s' "${CODEX_HOME_DIR}/models.newapi.json"
+      return 0
+    elif [ -f "${CODEX_HOME_DIR}/models.json" ]; then
+      printf '%s' "${CODEX_HOME_DIR}/models.json"
+      return 0
+    elif [ -f "$bundled" ]; then
+      printf '%s' "$bundled"
+      return 0
+    fi
+  fi
+
+  if [ -f "$local_asset" ]; then
+    payload="$(cat "$local_asset")"
+  else
+    payload="$BUNDLED_CATALOG_JSON"
+  fi
+  if [ -n "$payload" ]; then
+    mkdir -p "$CODEX_HOME_DIR"
+    if [ -f "$bundled" ]; then
+      cp -p "$bundled" "${bundled}.bak-$(date '+%Y%m%d-%H%M%S')"
+    fi
+    printf '%s\n' "$payload" > "$bundled"
+    chmod 600 "$bundled"
+    printf '%s' "$bundled"
   fi
 }
 
@@ -377,6 +454,7 @@ BASE_URL=""
 TOKEN="${PROXY_CLIENT_TOKEN:-}"
 API_KEY="${OPENCODE_GO_API_KEY:-}"
 CATALOG=""
+INSTALL_BUNDLED_CATALOG=0
 ASSUME_YES=0
 SKIP_TEST=0
 
@@ -387,6 +465,7 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --api-key) API_KEY="${2:-}"; shift 2 ;;
     --catalog) CATALOG="${2:-}"; shift 2 ;;
+    --install-catalog) INSTALL_BUNDLED_CATALOG=1; shift ;;
     --yes) ASSUME_YES=1; shift ;;
     --skip-test) SKIP_TEST=1; shift ;;
     -h|--help) usage; exit 0 ;;
