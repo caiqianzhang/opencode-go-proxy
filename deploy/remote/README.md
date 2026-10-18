@@ -1,7 +1,7 @@
 # Remote deployment
 
-This directory documents the deployment used for
-`https://<your-proxy-host>:9876/codex/v1`.
+This directory documents a generic remote deployment. Replace `<ssh-host>`
+with your SSH alias and `<proxy-host>:9876` with your HTTPS endpoint.
 
 The proxy runs as a Docker container on the existing `new-api` Docker network,
 behind the existing Caddy instance. Caddy terminates TLS and routes
@@ -82,13 +82,13 @@ docker exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```toml
 [model_providers.opencode-remote]
 name = "OpenCode Go remote"
-base_url = "https://<your-proxy-host>:9876/codex/v1"
+base_url = "https://<proxy-host>:9876/codex/v1"
 wire_api = "responses"
 experimental_bearer_token = "<same PROXY_CLIENT_TOKEN>"
 ```
 
-The IP certificate is self-signed and covers `<your-proxy-host>`. Clients must
-trust it. The public certificate on this host covers
-`<your-domain>`, not `<ssh-host>`.
+If the endpoint uses a self-signed certificate, distribute the CA certificate
+out of band and install it in the client trust store (or pass `--ca-cert` to
+`scripts/setup.sh`). A public certificate must match the hostname clients use.
 
 Never commit the env file or the client token.

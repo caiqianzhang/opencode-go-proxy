@@ -7,7 +7,7 @@
 #   9 = restore the most recent config backup
 #
 # Non-interactive examples:
-#   setup.sh --mode remote --base-url https://<your-proxy-host>:9876/codex/v1 \
+#   setup.sh --mode remote --base-url https://your-proxy-host:9876/codex/v1 \
 #            --token "$PROXY_CLIENT_TOKEN" --yes
 #   setup.sh --mode local --api-key "$OPENCODE_GO_API_KEY" --yes
 #   setup.sh --mode restore --yes
@@ -16,36 +16,13 @@ set -euo pipefail
 SCRIPT_VERSION="1.0.0"
 MODEL_SLUG="deepseek-v4.1-flash"
 PROVIDER_ID="opencode-go"
-DEFAULT_REMOTE_BASE_URL="https://<your-proxy-host>:9876/codex/v1"
+DEFAULT_REMOTE_BASE_URL=""
 DEFAULT_LOCAL_BASE_URL="http://127.0.0.1:8787/v1"
 BACKUP_DIRNAME="backup-opencode-go-proxy"
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
 CONFIG_PATH="${CODEX_HOME_DIR}/config.toml"
 BACKUP_ROOT="${CODEX_HOME_DIR}/${BACKUP_DIRNAME}"
-
-# Public self-signed certificate for https://<your-proxy-host>:9876.
-# Embedded so the curl one-liner can save it without a repo checkout.
-IP_CERT_PEM='-----BEGIN CERTIFICATE-----
-MIIDMzCCAhugAwIBAgIUIFm3ZKt9rq4FVrz09/Uz7jDkeBIwDQYJKoZIhvcNAQEL
-BQAwGDEWMBQGA1UEAwwNMTIwLjQ4LjExMi4yNjAeFw0yNjEwMTQwMzMwMzVaFw0z
-NjEwMTEwMzMwMzVaMBgxFjAUBgNVBAMMDTEyMC40OC4xMTIuMjYwggEiMA0GCSqG
-SIb3DQEBAQUAA4IBDwAwggEKAoIBAQCUqXwiafCK6H83F+2lBAMXM6tJDsMgcoK6
-KLhPsnwE93GJatuTrrCt8vyLWiAcza+fI2hNprzg2C0AaVEJ9HxzWoiGRW5bvR2E
-ftNyuVmqYc6OJpDro/xsOLVuaCCq9+W7LapTXTYRvIX/XNGmSMac1cnPYVhyFD68
-nBraaP2BmEOfVErKGBA6PYz5wU8YEumdoozmURyj47iO0TDkeX308rCihaZ+YBfg
-FgQGPzpoNr2cjUsXn/m2a8Uzchrk7tsH18yMlg8j6pei+w77Gz0rHNAUIEQafB8x
-HI9sWBtBqXypCOdGiN+ULmXbqvEEomcWpdGuGyYJ7GeWqP5Vyk4VAgMBAAGjdTBz
-MB0GA1UdDgQWBBRx95lwfmYSBuZentISHRqcCjFZEjAfBgNVHSMEGDAWgBRx95lw
-fmYSBuZentISHRqcCjFZEjAPBgNVHRMBAf8EBTADAQH/MCAGA1UdEQQZMBeHBHgw
-cBqHBH8AAAGCCWxvY2FsaG9zdDANBgkqhkiG9w0BAQsFAAOCAQEAka9IG26bK9OQ
-x4h98/U3h5yePBxXLepF+gAz1tzAQX7EnEWmaEL08iftlT8txHvLXbEiaryAfmWz
-MB2VJHC8U2gjweLNPaKS07zHD5VL1TMABqrIQZZ+KfYvPktyISu/h+VR4+Y+ct4X
-yYseMRXhP9mBE0KKZCve5zg9TDZ6egAD60FjKbcpr5PjG8DTVMspq06mSs/gJflZ
-V6mPV6qSd7KRpa9IV4MBR1fb6AHclfGNmIyrhSSnlaucP7AhOipfK1o0VNgiDTce
-0mRpPadzV32iWVD0kaAWm1PTtJNa/F/Vf/5gUbq6E4SYTods4HG+0W0O0a98OrG3
-4ky9txOQjw==
------END CERTIFICATE-----'
 
 # Small catalog for a fresh CODEX_HOME. It contains only the model metadata
 # Codex needs (including multi_agent_version=v2), not the full Codex prompt.
@@ -122,6 +99,7 @@ Usage: setup.sh [options]
   --token TOKEN        client token for remote mode (or PROXY_CLIENT_TOKEN)
   --api-key KEY        OpenCode Go key for local mode (or OPENCODE_GO_API_KEY)
   --catalog PATH       model catalog to set as model_catalog_json
+  --ca-cert PATH       CA certificate to save for a self-signed HTTPS endpoint
   --install-catalog    install/refresh the bundled minimal catalog
   --yes                do not ask for confirmation
   --skip-test          skip the remote endpoint check
@@ -360,40 +338,24 @@ check_remote() {
     -d '{}' 2>/dev/null || true)"
   case "$code" in
     401|403) die "远端拒绝了这个 client token（HTTP $code）。" ;;
-    000|'') warn "远端连通性检查失败；请确认网络和 IP 自签证书已受信任。" ;;
+    000|'') warn "远端连通性检查失败；请确认网络和证书信任（自签证书请用 --ca-cert 指定）。" ;;
     2*) ok "远端鉴权通过（HTTP $code）" ;;
     4*|5*) ok "远端鉴权通过（HTTP $code，空探测请求被上游拒绝属正常）" ;;
     *) warn "远端返回了未预期的 HTTP $code" ;;
   esac
 }
 
-trust_hint() {
-  local base_url="$1" cert_src cert_dst
-  case "$base_url" in
-    https://<your-proxy-host>:9876/*) ;;
-    *) return 0 ;;
-  esac
-  cert_src="${REPO_DIR}/deploy/remote/ip-ca.crt"
-  cert_dst="${HOME}/.config/opencode-go-proxy/ip-ca.crt"
-  if [ -f "$cert_src" ]; then
-    mkdir -p "$(dirname "$cert_dst")"
-    cp "$cert_src" "$cert_dst"
-    chmod 644 "$cert_dst"
-    info "${C_DIM}IP 证书已保存到 ${cert_dst}${C_RST}"
-  elif [ -n "$IP_CERT_PEM" ]; then
-    mkdir -p "$(dirname "$cert_dst")"
-    printf '%s\n' "$IP_CERT_PEM" > "$cert_dst"
-    chmod 644 "$cert_dst"
-    info "${C_DIM}IP 证书已保存到 ${cert_dst}${C_RST}"
-  fi
-  if command -v curl >/dev/null 2>&1; then
-    if ! curl -sS -o /dev/null --max-time 10 https://<your-proxy-host>:9876/ >/dev/null 2>&1; then
-      warn "当前系统还未信任 <your-proxy-host> 的自签证书。"
-      info "  Debian/Ubuntu: sudo cp ${cert_dst} /usr/local/share/ca-certificates/opencode-go-proxy-ip.crt && sudo update-ca-certificates"
-      info "  macOS: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${cert_dst}"
-      info "  Windows: 使用 scripts/setup.ps1，会安装到当前用户的 Root 证书商店。"
-    fi
-  fi
+handle_ca_cert() {
+  [ -n "$CA_CERT" ] || return 0
+  [ -f "$CA_CERT" ] || die "CA certificate not found: $CA_CERT"
+  local cert_dst="${HOME}/.config/opencode-go-proxy/ca.crt"
+  mkdir -p "$(dirname "$cert_dst")"
+  cp -p "$CA_CERT" "$cert_dst"
+  chmod 644 "$cert_dst"
+  info "${C_DIM}CA 证书已保存到 ${cert_dst}${C_RST}"
+  info "  Debian/Ubuntu: sudo cp ${cert_dst} /usr/local/share/ca-certificates/opencode-go-proxy.crt && sudo update-ca-certificates"
+  info "  macOS: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${cert_dst}"
+  info "  Windows: 使用 scripts/setup.ps1 --ca-cert <证书路径>"
 }
 
 restore_config() {
@@ -454,6 +416,7 @@ BASE_URL=""
 TOKEN="${PROXY_CLIENT_TOKEN:-}"
 API_KEY="${OPENCODE_GO_API_KEY:-}"
 CATALOG=""
+CA_CERT="${PROXY_CA_CERT:-}"
 INSTALL_BUNDLED_CATALOG=0
 ASSUME_YES=0
 SKIP_TEST=0
@@ -465,6 +428,7 @@ while [ $# -gt 0 ]; do
     --token) TOKEN="${2:-}"; shift 2 ;;
     --api-key) API_KEY="${2:-}"; shift 2 ;;
     --catalog) CATALOG="${2:-}"; shift 2 ;;
+    --ca-cert) CA_CERT="${2:-}"; shift 2 ;;
     --install-catalog) INSTALL_BUNDLED_CATALOG=1; shift ;;
     --yes) ASSUME_YES=1; shift ;;
     --skip-test) SKIP_TEST=1; shift ;;
@@ -475,7 +439,7 @@ done
 
 if [ -z "$MODE" ]; then
   head1 "OpenCode Go × Codex 配置"
-  info "  1. 使用远端 120 代理（推荐）"
+  info "  1. 使用远端代理（推荐）"
   info "  2. 使用本机代理服务"
   info "  9. 恢复最近一次备份"
   read_tty MODE "输入 1 / 2 / 9: "
@@ -494,15 +458,19 @@ case "$MODE" in
     ;;
   remote)
     BASE_URL="${BASE_URL:-$DEFAULT_REMOTE_BASE_URL}"
+    if [ -z "$BASE_URL" ]; then
+      read_tty BASE_URL "请输入远端 proxy base URL（例如 https://your-host:9876/codex/v1）: "
+    fi
+    [ -n "$BASE_URL" ] || die "remote base URL 不能为空。"
     if [ -z "$TOKEN" ]; then
       read_secret_tty TOKEN "请输入 remote client token: "
     fi
     [ -n "$TOKEN" ] || die "remote token 不能为空。"
+    handle_ca_cert
     [ "$SKIP_TEST" -eq 0 ] && check_remote "$BASE_URL" "$TOKEN"
     CATALOG="$(resolve_catalog "$CATALOG")"
     backup_config remote "$BASE_URL"
     update_config "$BASE_URL" "$TOKEN" "$CATALOG"
-    trust_hint "$BASE_URL"
     head1 "完成"
     info "  model          = $MODEL_SLUG"
     info "  model_provider = $PROVIDER_ID"

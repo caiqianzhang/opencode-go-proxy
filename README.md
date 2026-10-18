@@ -121,7 +121,7 @@ irm https://raw.githubusercontent.com/caiqianzhang/opencode-go-proxy/main/script
 
 菜单：
 
-- `1`：使用远端 `https://<your-proxy-host>:9876/codex/v1`
+- `1`：使用远端代理（需要输入你的 HTTPS `base_url`）
 - `2`：使用本机代理（仅 Linux systemd）
 - `9`：恢复最近一次备份
 
@@ -148,11 +148,17 @@ experimental_bearer_token = "<client token>"
 需要强制刷新内置目录时使用：
 
 ```bash
-scripts/setup.sh --mode remote --install-catalog ...
+scripts/setup.sh --mode remote \
+  --base-url https://<your-proxy-host>:9876/codex/v1 \
+  --token "$PROXY_CLIENT_TOKEN" \
+  --install-catalog --yes
 ```
 
 也可以用 `--catalog /path/to/models.json` 指定自己的目录。备份位于
 `~/.codex/backup-opencode-go-proxy/`，其中 `original` 始终保留首次安装前的配置。
+
+如果远端使用自签证书，用 `--ca-cert /path/to/ca.crt` 把证书保存到本地；
+脚本会打印系统信任命令，但不会自动执行 sudo。
 
 ### 监听地址
 

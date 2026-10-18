@@ -9,33 +9,10 @@ $ErrorActionPreference = 'Stop'
 $ScriptVersion = '1.0.0'
 $ModelSlug = 'deepseek-v4.1-flash'
 $ProviderId = 'opencode-go'
-$DefaultRemoteBaseUrl = 'https://<your-proxy-host>:9876/codex/v1'
+$DefaultRemoteBaseUrl = ''
 $CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $ConfigPath = Join-Path $CodexHomeDir 'config.toml'
 $BackupRoot = Join-Path $CodexHomeDir 'backup-opencode-go-proxy'
-
-$IpCertPem = @'
------BEGIN CERTIFICATE-----
-MIIDMzCCAhugAwIBAgIUIFm3ZKt9rq4FVrz09/Uz7jDkeBIwDQYJKoZIhvcNAQEL
-BQAwGDEWMBQGA1UEAwwNMTIwLjQ4LjExMi4yNjAeFw0yNjEwMTQwMzMwMzVaFw0z
-NjEwMTEwMzMwMzVaMBgxFjAUBgNVBAMMDTEyMC40OC4xMTIuMjYwggEiMA0GCSqG
-SIb3DQEBAQUAA4IBDwAwggEKAoIBAQCUqXwiafCK6H83F+2lBAMXM6tJDsMgcoK6
-KLhPsnwE93GJatuTrrCt8vyLWiAcza+fI2hNprzg2C0AaVEJ9HxzWoiGRW5bvR2E
-ftNyuVmqYc6OJpDro/xsOLVuaCCq9+W7LapTXTYRvIX/XNGmSMac1cnPYVhyFD68
-nBraaP2BmEOfVErKGBA6PYz5wU8YEumdoozmURyj47iO0TDkeX308rCihaZ+YBfg
-FgQGPzpoNr2cjUsXn/m2a8Uzchrk7tsH18yMlg8j6pei+w77Gz0rHNAUIEQafB8x
-HI9sWBtBqXypCOdGiN+ULmXbqvEEomcWpdGuGyYJ7GeWqP5Vyk4VAgMBAAGjdTBz
-MB0GA1UdDgQWBBRx95lwfmYSBuZentISHRqcCjFZEjAfBgNVHSMEGDAWgBRx95lw
-fmYSBuZentISHRqcCjFZEjAPBgNVHRMBAf8EBTADAQH/MCAGA1UdEQQZMBeHBHgw
-cBqHBH8AAAGCCWxvY2FsaG9zdDANBgkqhkiG9w0BAQsFAAOCAQEAka9IG26bK9OQ
-x4h98/U3h5yePBxXLepF+gAz1tzAQX7EnEWmaEL08iftlT8txHvLXbEiaryAfmWz
-MB2VJHC8U2gjweLNPaKS07zHD5VL1TMABqrIQZZ+KfYvPktyISu/h+VR4+Y+ct4X
-yYseMRXhP9mBE0KKZCve5zg9TDZ6egAD60FjKbcpr5PjG8DTVMspq06mSs/gJflZ
-V6mPV6qSd7KRpa9IV4MBR1fb6AHclfGNmIyrhSSnlaucP7AhOipfK1o0VNgiDTce
-0mRpPadzV32iWVD0kaAWm1PTtJNa/F/Vf/5gUbq6E4SYTods4HG+0W0O0a98OrG3
-4ky9txOQjw==
------END CERTIFICATE-----
-'@
 
 $BundledCatalogJson = @'
 {
@@ -99,6 +76,7 @@ $Mode = $env:SETUP_MODE
 $BaseUrl = if ($env:SETUP_BASE_URL) { $env:SETUP_BASE_URL } else { $DefaultRemoteBaseUrl }
 $Token = $env:PROXY_CLIENT_TOKEN
 $Catalog = $env:SETUP_CATALOG
+$CaCert = $env:PROXY_CA_CERT
 $InstallCatalog = ($env:SETUP_INSTALL_CATALOG -eq '1')
 $Yes = ($env:SETUP_YES -eq '1')
 $SkipTest = ($env:SETUP_SKIP_TEST -eq '1')
@@ -109,11 +87,12 @@ for ($i = 0; $i -lt $args.Count; $i++) {
         '--base-url' { if ($i + 1 -ge $args.Count) { Die '--base-url requires a value' }; $BaseUrl = $args[$i + 1]; $i++ }
         '--token' { if ($i + 1 -ge $args.Count) { Die '--token requires a value' }; $Token = $args[$i + 1]; $i++ }
         '--catalog' { if ($i + 1 -ge $args.Count) { Die '--catalog requires a value' }; $Catalog = $args[$i + 1]; $i++ }
+        '--ca-cert' { if ($i + 1 -ge $args.Count) { Die '--ca-cert requires a value' }; $CaCert = $args[$i + 1]; $i++ }
         '--install-catalog' { $InstallCatalog = $true }
         '--yes' { $Yes = $true }
         '--skip-test' { $SkipTest = $true }
-        '-h' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--install-catalog] [--yes] [--skip-test]'; return }
-        '--help' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--install-catalog] [--yes] [--skip-test]'; return }
+        '-h' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--ca-cert PATH] [--install-catalog] [--yes] [--skip-test]'; return }
+        '--help' { Write-Host 'Usage: setup.ps1 [--mode remote|restore] [--base-url URL] [--token TOKEN] [--catalog PATH] [--ca-cert PATH] [--install-catalog] [--yes] [--skip-test]'; return }
         default { Die "Unknown argument: $($args[$i])" }
     }
 }
@@ -247,18 +226,15 @@ function Update-Config {
     }
 }
 
-function Trust-IpCertificate {
-    param([string]$BaseUrl)
-    if ($BaseUrl -notmatch '^https://120\.48\.112\.26:9876/') { return }
-    $dir = Join-Path $HOME '.config\opencode-go-proxy'
-    New-Item -ItemType Directory -Path $dir -Force | Out-Null
-    $certPath = Join-Path $dir 'ip-ca.crt'
-    Write-Utf8NoBom $certPath $IpCertPem
-    & certutil.exe -addstore -user Root $certPath | Out-Null
+function Install-CaCert {
+    param([string]$Path)
+    if (-not $Path) { return }
+    if (-not (Test-Path $Path)) { Die "CA certificate not found: $Path" }
+    & certutil.exe -addstore -user Root $Path | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        Write-Warn2 "证书导入失败。请手动导入 $certPath 到当前用户的受信任根证书。"
+        Write-Warn2 "证书导入失败。请手动导入 $Path 到当前用户的受信任根证书。"
     } else {
-        Write-Ok "已将 IP 证书导入当前用户的受信任根证书"
+        Write-Ok "CA 证书已导入当前用户的受信任根证书"
     }
 }
 
@@ -336,7 +312,7 @@ function Restore-Config {
 
 if (-not $Mode) {
     Write-Head 'OpenCode Go x Codex 配置'
-    Write-Host '  1. 使用远端 120 代理（推荐）'
+    Write-Host '  1. 使用远端代理（推荐）'
     Write-Host '  9. 恢复最近一次备份'
     $choice = Read-Host '输入 1 / 9'
     switch ($choice) {
@@ -354,6 +330,11 @@ if ($Mode -ne 'remote') {
     Die "Windows 脚本目前支持 remote/restore；local 模式请使用 Linux/WSL。"
 }
 
+if (-not $BaseUrl) {
+    $BaseUrl = Read-Host '请输入远端 proxy base URL（例如 https://your-host:9876/codex/v1）'
+}
+if (-not $BaseUrl) { Die 'base URL 不能为空。' }
+
 if (-not $Token) {
     $secure = Read-Host '请输入 remote client token' -AsSecureString
     $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
@@ -365,8 +346,8 @@ if (-not $Token) {
 }
 if (-not $Token) { Die 'token 不能为空。' }
 
+Install-CaCert $CaCert
 if (-not $SkipTest) { Test-Remote $BaseUrl $Token }
-Trust-IpCertificate $BaseUrl
 if (-not $Catalog) {
     $Catalog = Resolve-Catalog $InstallCatalog
 }
