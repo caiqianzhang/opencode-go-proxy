@@ -103,3 +103,18 @@ echo
 openssl x509 -in "${OUT_DIR}/fullchain.pem" -noout -subject -dates -ext subjectAltName
 echo
 echo "Trust ca.crt on clients. Keep privkey.pem private."
+echo
+echo "Install examples:"
+echo "  Debian/Ubuntu:"
+echo "    sudo cp \"${OUT_DIR}/ca.crt\" /usr/local/share/ca-certificates/opencode-go-proxy.crt"
+echo "    sudo update-ca-certificates"
+echo "  Fedora/RHEL:"
+echo "    sudo cp \"${OUT_DIR}/ca.crt\" /etc/pki/ca-trust/source/anchors/opencode-go-proxy.crt"
+echo "    sudo update-ca-trust"
+echo "  macOS:"
+echo "    sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain \"${OUT_DIR}/ca.crt\""
+echo "  Windows:"
+echo "    certutil -addstore -user Root \"${OUT_DIR}/ca.crt\""
+echo
+echo "Or let setup.sh save the cert and print the platform-specific command:"
+echo "  scripts/setup.sh --mode remote --base-url https://<host>:9876/codex/v1 --ca-cert \"${OUT_DIR}/ca.crt\""

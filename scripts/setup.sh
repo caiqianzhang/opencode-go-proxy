@@ -354,6 +354,7 @@ handle_ca_cert() {
   chmod 644 "$cert_dst"
   info "${C_DIM}CA 证书已保存到 ${cert_dst}${C_RST}"
   info "  Debian/Ubuntu: sudo cp ${cert_dst} /usr/local/share/ca-certificates/opencode-go-proxy.crt && sudo update-ca-certificates"
+  info "  Fedora/RHEL: sudo cp ${cert_dst} /etc/pki/ca-trust/source/anchors/opencode-go-proxy.crt && sudo update-ca-trust"
   info "  macOS: sudo security add-trusted-cert -d -r trustRoot -k /Library/Keychains/System.keychain ${cert_dst}"
   info "  Windows: 使用 scripts/setup.ps1 --ca-cert <证书路径>"
 }

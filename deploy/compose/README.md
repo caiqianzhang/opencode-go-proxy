@@ -74,6 +74,43 @@ experimental_bearer_token = "<same PROXY_CLIENT_TOKEN>"
 
 Clients using the self-signed certificate must trust `certs/ca.crt`.
 
+## Trust the certificate
+
+Debian/Ubuntu:
+
+```bash
+sudo cp certs/ca.crt /usr/local/share/ca-certificates/opencode-go-proxy.crt
+sudo update-ca-certificates
+```
+
+Fedora/RHEL:
+
+```bash
+sudo cp certs/ca.crt /etc/pki/ca-trust/source/anchors/opencode-go-proxy.crt
+sudo update-ca-trust
+```
+
+macOS:
+
+```bash
+sudo security add-trusted-cert -d -r trustRoot \
+  -k /Library/Keychains/System.keychain certs/ca.crt
+```
+
+Windows PowerShell:
+
+```powershell
+certutil -addstore -user Root certs\ca.crt
+```
+
+Alternatively, pass the CA to the setup script:
+
+```bash
+scripts/setup.sh --mode remote \
+  --base-url https://<server-ip>:9876/codex/v1 \
+  --ca-cert certs/ca.crt
+```
+
 ## Stop
 
 ```bash
