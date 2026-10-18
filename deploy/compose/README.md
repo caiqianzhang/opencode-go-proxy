@@ -54,6 +54,14 @@ docker compose logs -f proxy caddy
 
 The proxy is not published directly; only Caddy listens on 9876.
 
+To use a different host port, set `PROXY_HTTPS_PORT`:
+
+```bash
+PROXY_HTTPS_PORT=7000 docker compose up -d --build
+```
+
+The container still listens on 9876 internally; only the host port changes.
+
 ## 4. Configure Codex
 
 ```toml

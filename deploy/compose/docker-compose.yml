@@ -30,7 +30,7 @@ services:
       proxy:
         condition: service_healthy
     ports:
-      - "9876:9876"
+      - "${PROXY_HTTPS_PORT:-9876}:9876"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - ./certs:/etc/caddy/certs:ro

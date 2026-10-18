@@ -186,6 +186,12 @@ Codex 配置：
 base_url = "https://<server-ip>:9876/codex/v1"
 ```
 
+如果宿主机想用其他端口，例如 7000：
+
+```bash
+PROXY_HTTPS_PORT=7000 docker compose up -d --build
+```
+
 客户端需要信任 `deploy/compose/certs/ca.crt`。私钥、证书和 env 文件都已被
 `.gitignore` 排除。
 
