@@ -14,7 +14,7 @@ BIN_PATH="${BIN_DIR}/opencode-go-proxy"
 
 if [[ ! -x "${REPO_DIR}/opencode-go-proxy" ]]; then
   echo "error: ${REPO_DIR}/opencode-go-proxy not found or not executable" >&2
-  echo "build it first: docker run --rm -v \"\$PWD\":/src -w /src golang:1.23-alpine go build -o opencode-go-proxy ." >&2
+  echo "build it first: docker run --rm -v \"\$PWD\":/src -w /src golang:1.26-alpine go build -o opencode-go-proxy ." >&2
   exit 1
 fi
 

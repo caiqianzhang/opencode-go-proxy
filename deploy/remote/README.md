@@ -14,7 +14,7 @@ binary, this Dockerfile, and the host CA bundle into one directory on the
 server:
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src golang:1.23-alpine \
+docker run --rm -v "$PWD":/src -w /src golang:1.26-alpine \
   sh -c 'go build -trimpath -ldflags "-s -w" -o opencode-go-proxy .'
 
 ssh <ssh-host> 'mkdir -p /root/opencode-go-proxy'

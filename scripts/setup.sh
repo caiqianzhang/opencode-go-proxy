@@ -23,6 +23,8 @@ REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 CODEX_HOME_DIR="${CODEX_HOME:-${HOME}/.codex}"
 CONFIG_PATH="${CODEX_HOME_DIR}/config.toml"
 BACKUP_ROOT="${CODEX_HOME_DIR}/${BACKUP_DIRNAME}"
+CATALOG_TARGET="${CODEX_HOME_DIR}/models.opencode-go.json"
+CATALOG_TARGET_EXISTED=0
 
 # Small catalog for a fresh CODEX_HOME. It contains only the model metadata
 # Codex needs (including multi_agent_version=v2), not the full Codex prompt.
@@ -153,8 +155,16 @@ find_python() {
   return 1
 }
 
+prepare_catalog() {
+  if [ -f "$CATALOG_TARGET" ]; then
+    CATALOG_TARGET_EXISTED=1
+  else
+    CATALOG_TARGET_EXISTED=0
+  fi
+}
+
 resolve_catalog() {
-  local requested="$1" bundled="${CODEX_HOME_DIR}/models.opencode-go.json"
+  local requested="$1" bundled="$CATALOG_TARGET"
   local local_asset="${REPO_DIR}/assets/models.deepseek-v4.1-flash.json" payload=""
   if [ -n "$requested" ]; then
     [ -f "$requested" ] || die "model catalog not found: $requested"
@@ -205,12 +215,16 @@ backup_config() {
   else
     existed=0
   fi
+  if [ "$CATALOG_TARGET_EXISTED" = "1" ] && [ -f "$CATALOG_TARGET" ]; then
+    cp -p "$CATALOG_TARGET" "${dir}/catalog.json" || die "备份模型目录失败"
+  fi
   {
     printf 'script_version=%s\n' "$SCRIPT_VERSION"
     printf 'installed_at=%s\n' "$(date '+%Y-%m-%d %H:%M:%S')"
     printf 'mode=%s\n' "$mode"
     printf 'base_url=%s\n' "$base_url"
     printf 'original_config_existed=%s\n' "$existed"
+    printf 'catalog_target_existed=%s\n' "$CATALOG_TARGET_EXISTED"
   } > "${dir}/manifest.txt"
   ok "已备份 Codex 配置 → $dir"
 }
@@ -338,7 +352,8 @@ check_remote() {
     -d '{}' 2>/dev/null || true)"
   case "$code" in
     401|403) die "远端拒绝了这个 client token（HTTP $code）。" ;;
-    000|'') warn "远端连通性检查失败；请确认网络和证书信任（自签证书请用 --ca-cert 指定）。" ;;
+    404|405) die "远端路径可能错误（HTTP $code）；请检查 base_url 是否包含正确的 /codex/v1 前缀。" ;;
+    000|'') die "远端连接失败；请检查网络、TLS 证书（自签证书用 --ca-cert）或使用 --skip-test 跳过检查。" ;;
     2*) ok "远端鉴权通过（HTTP $code）" ;;
     4*|5*) ok "远端鉴权通过（HTTP $code，空探测请求被上游拒绝属正常）" ;;
     *) warn "远端返回了未预期的 HTTP $code" ;;
@@ -375,7 +390,7 @@ restore_config() {
   local count
   count="$(printf '%s\n' "$list" | wc -l | tr -d ' ')"
   if [ "$ASSUME_YES" -eq 0 ] && [ "$count" -gt 1 ]; then
-    head1 "选择要恢复的备份"
+    head1 "选择要恢复的备份（original = 首次安装前）"
     local i=1
     while IFS= read -r name; do
       info "  $i. $name"
@@ -392,8 +407,10 @@ restore_config() {
 
   local dir="${BACKUP_ROOT}/${chosen}"
   local existed=1
+  local catalog_existed=""
   if [ -f "${dir}/manifest.txt" ]; then
     existed="$(sed -n 's/^original_config_existed=//p' "${dir}/manifest.txt" | head -1)"
+    catalog_existed="$(sed -n 's/^catalog_target_existed=//p' "${dir}/manifest.txt" | head -1)"
   fi
   if [ "$ASSUME_YES" -eq 0 ]; then
     local answer
@@ -409,6 +426,16 @@ restore_config() {
     cp -p "${dir}/config.toml" "$CONFIG_PATH"
     ok "已恢复 ${CONFIG_PATH}"
   fi
+  if [ -n "$catalog_existed" ]; then
+    if [ "$catalog_existed" = "1" ] && [ -f "${dir}/catalog.json" ]; then
+      mkdir -p "$(dirname "$CATALOG_TARGET")"
+      cp -p "${dir}/catalog.json" "$CATALOG_TARGET"
+      ok "已恢复 ${CATALOG_TARGET}"
+    elif [ "$catalog_existed" = "0" ]; then
+      rm -f "$CATALOG_TARGET"
+      ok "已移除安装时创建的 ${CATALOG_TARGET}"
+    fi
+  fi
   info "备份保留在 ${dir}，确认无误后可自行删除。"
 }
 
@@ -416,6 +443,8 @@ MODE=""
 BASE_URL=""
 TOKEN="${PROXY_CLIENT_TOKEN:-}"
 API_KEY="${OPENCODE_GO_API_KEY:-}"
+TOKEN_FROM_ARG=0
+API_KEY_FROM_ARG=0
 CATALOG=""
 CA_CERT="${PROXY_CA_CERT:-}"
 INSTALL_BUNDLED_CATALOG=0
@@ -426,8 +455,8 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --mode) MODE="${2:-}"; shift 2 ;;
     --base-url) BASE_URL="${2:-}"; shift 2 ;;
-    --token) TOKEN="${2:-}"; shift 2 ;;
-    --api-key) API_KEY="${2:-}"; shift 2 ;;
+    --token) TOKEN="${2:-}"; TOKEN_FROM_ARG=1; shift 2 ;;
+    --api-key) API_KEY="${2:-}"; API_KEY_FROM_ARG=1; shift 2 ;;
     --catalog) CATALOG="${2:-}"; shift 2 ;;
     --ca-cert) CA_CERT="${2:-}"; shift 2 ;;
     --install-catalog) INSTALL_BUNDLED_CATALOG=1; shift ;;
@@ -442,7 +471,7 @@ if [ -z "$MODE" ]; then
   head1 "OpenCode Go × Codex 配置"
   info "  1. 使用远端代理（推荐）"
   info "  2. 使用本机代理服务"
-  info "  9. 恢复最近一次备份"
+  info "  9. 恢复首次安装前备份（original）"
   read_tty MODE "输入 1 / 2 / 9: "
   case "$MODE" in
     1) MODE=remote ;;
@@ -467,8 +496,12 @@ case "$MODE" in
       read_secret_tty TOKEN "请输入 remote client token: "
     fi
     [ -n "$TOKEN" ] || die "remote token 不能为空。"
+    if [ "$TOKEN_FROM_ARG" -eq 1 ]; then
+      warn "--token 会出现在进程列表中，建议改用 PROXY_CLIENT_TOKEN 环境变量。"
+    fi
     handle_ca_cert
     [ "$SKIP_TEST" -eq 0 ] && check_remote "$BASE_URL" "$TOKEN"
+    prepare_catalog
     CATALOG="$(resolve_catalog "$CATALOG")"
     backup_config remote "$BASE_URL"
     update_config "$BASE_URL" "$TOKEN" "$CATALOG"
@@ -485,12 +518,15 @@ case "$MODE" in
       read_secret_tty API_KEY "请输入 OpenCode Go API key: "
     fi
     [ -n "$API_KEY" ] || die "API key 不能为空。"
+    if [ "$API_KEY_FROM_ARG" -eq 1 ]; then
+      warn "--api-key 会出现在进程列表中，建议改用 OPENCODE_GO_API_KEY 环境变量。"
+    fi
     command -v systemctl >/dev/null 2>&1 || die "local 模式依赖 systemd；macOS/Windows 请使用 remote 模式。"
 
     if [ ! -x "${REPO_DIR}/opencode-go-proxy" ]; then
       if command -v docker >/dev/null 2>&1; then
         info "构建本地二进制（Docker）..."
-        docker run --rm -v "${REPO_DIR}":/src -w /src golang:1.23-alpine \
+        docker run --rm -v "${REPO_DIR}":/src -w /src golang:1.26-alpine \
           sh -c 'go build -trimpath -ldflags "-s -w" -o opencode-go-proxy .'
       elif command -v go >/dev/null 2>&1; then
         info "构建本地二进制（Go）..."
@@ -503,6 +539,7 @@ case "$MODE" in
     OPENCODE_GO_API_KEY="$API_KEY" PROXY_LISTEN="127.0.0.1:8787" \
       bash "${REPO_DIR}/deploy/install.sh"
 
+    prepare_catalog
     CATALOG="$(resolve_catalog "$CATALOG")"
     backup_config local "$BASE_URL"
     update_config "$BASE_URL" "proxy-managed" "$CATALOG"

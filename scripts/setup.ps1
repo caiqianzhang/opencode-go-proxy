@@ -13,6 +13,8 @@ $DefaultRemoteBaseUrl = ''
 $CodexHomeDir = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { Join-Path $HOME '.codex' }
 $ConfigPath = Join-Path $CodexHomeDir 'config.toml'
 $BackupRoot = Join-Path $CodexHomeDir 'backup-opencode-go-proxy'
+$CatalogTarget = Join-Path $CodexHomeDir 'models.opencode-go.json'
+$CatalogTargetExisted = $false
 
 $BundledCatalogJson = @'
 {
@@ -78,6 +80,7 @@ $Token = $env:PROXY_CLIENT_TOKEN
 $Catalog = $env:SETUP_CATALOG
 $CaCert = $env:PROXY_CA_CERT
 $InstallCatalog = ($env:SETUP_INSTALL_CATALOG -eq '1')
+$TokenFromArg = $false
 $Yes = ($env:SETUP_YES -eq '1')
 $SkipTest = ($env:SETUP_SKIP_TEST -eq '1')
 
@@ -85,7 +88,7 @@ for ($i = 0; $i -lt $args.Count; $i++) {
     switch ($args[$i]) {
         '--mode' { if ($i + 1 -ge $args.Count) { Die '--mode requires a value' }; $Mode = $args[$i + 1]; $i++ }
         '--base-url' { if ($i + 1 -ge $args.Count) { Die '--base-url requires a value' }; $BaseUrl = $args[$i + 1]; $i++ }
-        '--token' { if ($i + 1 -ge $args.Count) { Die '--token requires a value' }; $Token = $args[$i + 1]; $i++ }
+        '--token' { if ($i + 1 -ge $args.Count) { Die '--token requires a value' }; $Token = $args[$i + 1]; $TokenFromArg = $true; $i++ }
         '--catalog' { if ($i + 1 -ge $args.Count) { Die '--catalog requires a value' }; $Catalog = $args[$i + 1]; $i++ }
         '--ca-cert' { if ($i + 1 -ge $args.Count) { Die '--ca-cert requires a value' }; $CaCert = $args[$i + 1]; $i++ }
         '--install-catalog' { $InstallCatalog = $true }
@@ -105,7 +108,7 @@ function Write-Utf8NoBom {
 
 function Resolve-Catalog {
     param([bool]$Force)
-    $bundled = Join-Path $CodexHomeDir 'models.opencode-go.json'
+    $bundled = $CatalogTarget
     if (-not $Force) {
         foreach ($name in @('models.newapi.json', 'models.json')) {
             $candidate = Join-Path $CodexHomeDir $name
@@ -140,12 +143,17 @@ function Backup-Config {
     } else {
         $existed = 0
     }
+    $catalogExisted = if ($CatalogTargetExisted) { 1 } else { 0 }
+    if ($CatalogTargetExisted -and (Test-Path $CatalogTarget)) {
+        Copy-Item -LiteralPath $CatalogTarget -Destination (Join-Path $dir 'catalog.json') -Force
+    }
     Write-Utf8NoBom (Join-Path $dir 'manifest.txt') @"
 script_version=$ScriptVersion
 installed_at=$((Get-Date).ToString('yyyy-MM-dd HH:mm:ss'))
 mode=$Mode
 base_url=$BaseUrl
 original_config_existed=$existed
+catalog_target_existed=$catalogExisted
 "@
     Write-Ok "已备份 Codex 配置 -> $dir"
 }
@@ -253,8 +261,10 @@ function Test-Remote {
     }
     if ($code -eq 401 -or $code -eq 403) {
         Die "远端拒绝了这个 client token（HTTP $code）。"
+    } elseif ($code -eq 404 -or $code -eq 405) {
+        Die "远端路径可能错误（HTTP $code）；请检查 base-url 是否包含正确的 /codex/v1 前缀。"
     } elseif ($code -eq 0) {
-        Write-Warn2 "远端连通性检查失败；请确认网络和 IP 证书。"
+        Die "远端连接失败；请检查网络、TLS 证书或使用 --skip-test 跳过检查。"
     } elseif ($code -ge 200 -and $code -lt 600) {
         Write-Ok "远端鉴权通过（HTTP $code，空探测请求被上游拒绝属正常）"
     } else {
@@ -289,9 +299,12 @@ function Restore-Config {
     $dir = Join-Path $BackupRoot $chosen
     $manifest = Join-Path $dir 'manifest.txt'
     $existed = '1'
+    $catalogExisted = ''
     if (Test-Path $manifest) {
         $line = Get-Content -LiteralPath $manifest | Where-Object { $_ -like 'original_config_existed=*' } | Select-Object -First 1
         if ($line) { $existed = $line.Substring($line.IndexOf('=') + 1) }
+        $line = Get-Content -LiteralPath $manifest | Where-Object { $_ -like 'catalog_target_existed=*' } | Select-Object -First 1
+        if ($line) { $catalogExisted = $line.Substring($line.IndexOf('=') + 1) }
     }
     if (-not $Yes) {
         $answer = Read-Host "确认恢复 $chosen？输入 y 继续"
@@ -307,13 +320,20 @@ function Restore-Config {
         Copy-Item -LiteralPath $backupConfig -Destination $ConfigPath -Force
         Write-Ok "已恢复 $ConfigPath"
     }
+    if ($catalogExisted -eq '1' -and (Test-Path (Join-Path $dir 'catalog.json'))) {
+        Copy-Item -LiteralPath (Join-Path $dir 'catalog.json') -Destination $CatalogTarget -Force
+        Write-Ok "已恢复 $CatalogTarget"
+    } elseif ($catalogExisted -eq '0') {
+        if (Test-Path $CatalogTarget) { Remove-Item -LiteralPath $CatalogTarget -Force }
+        Write-Ok "已移除安装时创建的 $CatalogTarget"
+    }
     Write-Host "备份保留在 $dir"
 }
 
 if (-not $Mode) {
     Write-Head 'OpenCode Go x Codex 配置'
     Write-Host '  1. 使用远端代理（推荐）'
-    Write-Host '  9. 恢复最近一次备份'
+    Write-Host '  9. 恢复首次安装前备份（original）'
     $choice = Read-Host '输入 1 / 9'
     switch ($choice) {
         '1' { $Mode = 'remote' }
@@ -345,9 +365,13 @@ if (-not $Token) {
     }
 }
 if (-not $Token) { Die 'token 不能为空。' }
+if ($TokenFromArg) {
+    Write-Warn2 '--token 会出现在进程列表中，建议改用 PROXY_CLIENT_TOKEN 环境变量。'
+}
 
 Install-CaCert $CaCert
 if (-not $SkipTest) { Test-Remote $BaseUrl $Token }
+$CatalogTargetExisted = Test-Path $CatalogTarget
 if (-not $Catalog) {
     $Catalog = Resolve-Catalog $InstallCatalog
 }

@@ -33,6 +33,8 @@ certs/ca.crt
 ## 2. Configure secrets
 
 ```bash
+cp .env.example .env
+# Edit COMPOSE_PROJECT_NAME and PROXY_HTTPS_PORT if needed.
 cp opencode-go-proxy.env.example opencode-go-proxy.env
 chmod 600 opencode-go-proxy.env
 ```
@@ -47,7 +49,7 @@ PROXY_CLIENT_TOKEN=<long random token>
 ## 3. Start
 
 ```bash
-docker compose up -d --build
+./start.sh
 docker compose ps
 docker compose logs -f proxy caddy
 ```
@@ -62,6 +64,9 @@ PROXY_HTTPS_PORT=7000 docker compose up -d --build
 
 The container still listens on 9876 internally; only the host port changes.
 
+`start.sh` checks for the env file and TLS files before calling
+`docker compose up -d --build`.
+
 ## 4. Configure Codex
 
 ```toml
@@ -73,6 +78,12 @@ experimental_bearer_token = "<same PROXY_CLIENT_TOKEN>"
 ```
 
 Clients using the self-signed certificate must trust `certs/ca.crt`.
+
+The Compose stack uses static certificates. If you replace them, restart Caddy:
+
+```bash
+docker compose restart caddy
+```
 
 ## Trust the certificate
 

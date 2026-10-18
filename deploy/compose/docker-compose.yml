@@ -15,6 +15,11 @@ services:
       - /tmp:rw,noexec,nosuid,size=16m
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks:
       - proxy-net
     healthcheck:
@@ -25,7 +30,7 @@ services:
       start_period: 5s
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.7-alpine
     depends_on:
       proxy:
         condition: service_healthy
@@ -39,6 +44,11 @@ services:
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
     networks:
       - proxy-net
 

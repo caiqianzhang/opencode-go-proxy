@@ -69,4 +69,11 @@ bash "${SETUP}" --mode remote \
   --install-catalog --skip-test --yes >/tmp/opencode-setup-test-forced.log
 grep -q "^model_catalog_json = \"${CODEX_HOME}/models.opencode-go.json\"$" "${CODEX_HOME}/config.toml"
 
+# Restore must also remove the catalog created by the installer.
+bash "${SETUP}" --mode restore --yes >/tmp/opencode-setup-test-restore-catalog.log
+[ ! -f "${CODEX_HOME}/models.opencode-go.json" ] || {
+  echo "restore left models.opencode-go.json behind" >&2
+  exit 1
+}
+
 echo "setup.sh tests passed"

@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+      - name: Format
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test ./...
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: bash -n scripts/setup.sh scripts/gen-self-signed-cert.sh scripts/test_setup.sh deploy/compose/start.sh
+      - name: Setup regression test
+        run: bash scripts/test_setup.sh
+      - name: Compose config
+        run: |
+          cp deploy/compose/opencode-go-proxy.env.example deploy/compose/opencode-go-proxy.env
+          docker compose -f deploy/compose/docker-compose.yml config --quiet
+
+  powershell:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse setup.ps1
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD/scripts/setup.ps1", [ref]$null, [ref]$errors
+          ) | Out-Null
+          if ($errors.Count -gt 0) {
+            $errors | Format-Table
+            exit 1
+          }
+      - name: Dry-run config update
+        shell: pwsh
+        run: |
+          $env:CODEX_HOME = Join-Path $env:RUNNER_TEMP "codex"
+          New-Item -ItemType Directory -Force -Path $env:CODEX_HOME | Out-Null
+          @'
+          model = "gpt-5"
+          model_provider = "openai"
+          '@ | Set-Content -LiteralPath (Join-Path $env:CODEX_HOME "config.toml") -Encoding UTF8
+          $env:PROXY_CLIENT_TOKEN = "test-token"
+          pwsh -File scripts/setup.ps1 --mode remote --base-url https://example.test/codex/v1 --skip-test --yes
+          $cfg = Get-Content -Raw (Join-Path $env:CODEX_HOME "config.toml")
+          if ($cfg -notmatch 'model_provider = "opencode-go"') { exit 1 }

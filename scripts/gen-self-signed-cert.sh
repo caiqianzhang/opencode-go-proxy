@@ -50,10 +50,14 @@ if [ -z "$IP" ]; then
 fi
 
 mkdir -p "$OUT_DIR"
+stamp="$(date '+%Y%m%d-%H%M%S')"
 for file in fullchain.pem privkey.pem ca.crt; do
-  if [ -e "${OUT_DIR}/${file}" ] && [ "$FORCE" -ne 1 ]; then
-    echo "refusing to overwrite ${OUT_DIR}/${file}; use --force" >&2
-    exit 1
+  if [ -e "${OUT_DIR}/${file}" ]; then
+    if [ "$FORCE" -ne 1 ]; then
+      echo "refusing to overwrite ${OUT_DIR}/${file}; use --force" >&2
+      exit 1
+    fi
+    cp -p "${OUT_DIR}/${file}" "${OUT_DIR}/${file}.bak-${stamp}"
   fi
 done
 
@@ -94,6 +98,7 @@ openssl req -x509 -newkey rsa:4096 -nodes -sha256 \
 cp "${OUT_DIR}/fullchain.pem" "${OUT_DIR}/ca.crt"
 chmod 600 "${OUT_DIR}/privkey.pem"
 chmod 644 "${OUT_DIR}/fullchain.pem" "${OUT_DIR}/ca.crt"
+openssl verify -CAfile "${OUT_DIR}/ca.crt" "${OUT_DIR}/fullchain.pem" >/dev/null
 
 echo "generated:"
 echo "  ${OUT_DIR}/fullchain.pem"

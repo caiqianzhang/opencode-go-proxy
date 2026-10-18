@@ -76,14 +76,14 @@ Codex 的 MultiAgent V2 给子 Agent 派任务时，请求体里用的是 OpenAI
 本机没有 Go 工具链，用容器构建：
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src golang:1.23-alpine \
+docker run --rm -v "$PWD":/src -w /src golang:1.26-alpine \
   sh -c 'go build -trimpath -ldflags "-s -w" -o opencode-go-proxy .'
 ```
 
 测试：
 
 ```bash
-docker run --rm -v "$PWD":/src -w /src golang:1.23-alpine go test ./...
+docker run --rm -v "$PWD":/src -w /src golang:1.26-alpine go test ./...
 ```
 
 ## 运行
@@ -174,10 +174,12 @@ scripts/setup.sh --mode remote \
 ./scripts/gen-self-signed-cert.sh --ip <server-ip>
 
 cd deploy/compose
+cp .env.example .env
+# 按需修改 COMPOSE_PROJECT_NAME / PROXY_HTTPS_PORT
 cp opencode-go-proxy.env.example opencode-go-proxy.env
 chmod 600 opencode-go-proxy.env
 # 编辑 env，填入上游 key 和 client token
-docker compose up -d --build
+./start.sh
 ```
 
 Codex 配置：
@@ -197,6 +199,9 @@ PROXY_HTTPS_PORT=7000 docker compose up -d --build
 
 证书生成脚本：[scripts/gen-self-signed-cert.sh](scripts/gen-self-signed-cert.sh)，
 支持 IP/DNS SAN、自动检测 IP、指定有效期和 `--force`。
+
+当前 Compose 使用静态证书，不会自动续期。如果换成公信 CA 证书，续期后需要执行
+`docker compose restart caddy`。Caddy 访问日志和 Docker 日志都配置了轮转。
 
 ### 监听地址
 
