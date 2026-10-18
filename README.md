@@ -93,6 +93,54 @@ export OPENCODE_GO_API_KEY='oc_sk_...'
 ./opencode-go-proxy -listen 127.0.0.1:8787
 ```
 
+## 一键配置 Codex
+
+交互式配置脚本参考了 DeepSeek 官方脚本的思路：菜单选择、配置备份、原子写入和恢复。
+
+Linux / macOS / WSL：
+
+```bash
+bash scripts/setup.sh
+```
+
+Windows PowerShell：
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup.ps1
+```
+
+也可以从 GitHub 直接运行（仓库为公开时）：
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/caiqianzhang/opencode-go-proxy/main/scripts/setup.sh)
+```
+
+```powershell
+irm https://raw.githubusercontent.com/caiqianzhang/opencode-go-proxy/main/scripts/setup.ps1 | iex
+```
+
+菜单：
+
+- `1`：使用远端 `https://<your-proxy-host>:9876/codex/v1`
+- `2`：使用本机代理（仅 Linux systemd）
+- `9`：恢复最近一次备份
+
+Windows 的 `setup.ps1` 当前支持 `remote` 和 `restore`；本机代理模式请使用 WSL 或 Linux。
+
+远端模式会要求输入 client token，并写入：
+
+```toml
+[model_providers.opencode-go]
+name = "OpenCode Go"
+base_url = "https://<your-proxy-host>:9876/codex/v1"
+wire_api = "responses"
+experimental_bearer_token = "<client token>"
+```
+
+脚本会优先复用 `~/.codex/models.newapi.json` 或 `~/.codex/models.json` 作为模型目录；
+如果没有，可用 `--catalog /path/to/models.json` 指定。备份位于
+`~/.codex/backup-opencode-go-proxy/`，其中 `original` 始终保留首次安装前的配置。
+
 ### 监听地址
 
 `-listen` 可以是任意合法的 `host:port`，不限于 `127.0.0.1`：
