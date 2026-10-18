@@ -2,3 +2,5 @@
 *.log
 /dumps/
 coverage.out
+/deploy/compose/opencode-go-proxy.env
+/deploy/compose/certs/

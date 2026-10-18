@@ -1,0 +1,6 @@
+.git
+.gitignore
+opencode-go-proxy
+*.log
+deploy/compose/certs
+deploy/compose/opencode-go-proxy.env

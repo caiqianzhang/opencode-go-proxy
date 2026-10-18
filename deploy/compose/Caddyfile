@@ -1,0 +1,23 @@
+:9876 {
+	tls /etc/caddy/certs/fullchain.pem /etc/caddy/certs/privkey.pem
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		-Server
+	}
+
+	handle_path /codex/* {
+		reverse_proxy proxy:8787 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		respond "Not Found" 404
+	}
+
+	log {
+		output file /data/access.log
+	}
+}

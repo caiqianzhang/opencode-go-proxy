@@ -354,3 +354,29 @@ func TestEmptyDumpDirStillForwardsRequests(t *testing.T) {
 		t.Fatalf("path = %q, want the rewritten upstream path", got.path)
 	}
 }
+
+func TestHealthzBypassesUpstream(t *testing.T) {
+	upstream, requests := newCaptureServer(t)
+	front := newTestFront(t, upstream, "")
+
+	resp, err := http.Get(front.URL + "/healthz")
+	if err != nil {
+		t.Fatalf("GET /healthz: %v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("read health body: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want 200", resp.StatusCode)
+	}
+	if string(body) != "ok\n" {
+		t.Fatalf("body = %q, want %q", body, "ok\n")
+	}
+	select {
+	case got := <-requests:
+		t.Fatalf("health request reached upstream: %+v", got)
+	default:
+	}
+}

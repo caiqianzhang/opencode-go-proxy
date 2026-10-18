@@ -160,6 +160,38 @@ scripts/setup.sh --mode remote \
 如果远端使用自签证书，用 `--ca-cert /path/to/ca.crt` 把证书保存到本地；
 脚本会打印系统信任命令，但不会自动执行 sudo。
 
+## Docker Compose 独立部署
+
+仓库提供了一套独立栈：[deploy/compose](deploy/compose)。
+它会同时启动 proxy 和 Caddy，只有 Caddy 对外监听 9876。
+
+注意：现有 120 服务器上的 9876 已经被 `new-api` 的 Caddy 占用。不要在同一个
+端口上再启动一套 Caddy；那种情况应把 proxy 加入现有 Compose，并扩展现有 Caddyfile。
+
+新服务器上的步骤：
+
+```bash
+./scripts/gen-self-signed-cert.sh --ip <server-ip>
+
+cd deploy/compose
+cp opencode-go-proxy.env.example opencode-go-proxy.env
+chmod 600 opencode-go-proxy.env
+# 编辑 env，填入上游 key 和 client token
+docker compose up -d --build
+```
+
+Codex 配置：
+
+```toml
+base_url = "https://<server-ip>:9876/codex/v1"
+```
+
+客户端需要信任 `deploy/compose/certs/ca.crt`。私钥、证书和 env 文件都已被
+`.gitignore` 排除。
+
+证书生成脚本：[scripts/gen-self-signed-cert.sh](scripts/gen-self-signed-cert.sh)，
+支持 IP/DNS SAN、自动检测 IP、指定有效期和 `--force`。
+
 ### 监听地址
 
 `-listen` 可以是任意合法的 `host:port`，不限于 `127.0.0.1`：
