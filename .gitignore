@@ -1,0 +1,4 @@
+/opencode-go-proxy
+*.log
+/dumps/
+coverage.out

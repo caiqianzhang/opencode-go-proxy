@@ -1,0 +1,18 @@
+[Unit]
+Description=OpenCode Go local proxy for Codex
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/opencode-go-proxy.env
+ExecStart=%h/.local/bin/opencode-go-proxy
+Restart=on-failure
+RestartSec=2
+NoNewPrivileges=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=default.target
