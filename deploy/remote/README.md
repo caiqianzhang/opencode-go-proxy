@@ -1,7 +1,7 @@
 # Remote deployment
 
 This directory documents a generic remote deployment. Replace `<ssh-host>`
-with your SSH alias and `<proxy-host>:9876` with your HTTPS endpoint.
+with your SSH alias and `<proxy-host>:<port>` with your HTTPS endpoint.
 
 The proxy runs as a Docker container on the existing `new-api` Docker network,
 behind the existing Caddy instance. Caddy terminates TLS and routes
@@ -70,7 +70,7 @@ In the existing Caddyfile, keep the current `new-api` gateway and add a
 }
 ```
 
-Apply `gateway_headers` and `codex_gateway` to the `:9876` site blocks, then:
+Apply `gateway_headers` and `codex_gateway` to the `:<port>` site blocks, then:
 
 ```bash
 docker exec caddy caddy validate --config /etc/caddy/Caddyfile
@@ -82,7 +82,7 @@ docker exec caddy caddy reload --config /etc/caddy/Caddyfile
 ```toml
 [model_providers.opencode-remote]
 name = "OpenCode Go remote"
-base_url = "https://<proxy-host>:9876/codex/v1"
+base_url = "https://<proxy-host>:<port>/codex/v1"
 wire_api = "responses"
 experimental_bearer_token = "<same PROXY_CLIENT_TOKEN>"
 ```

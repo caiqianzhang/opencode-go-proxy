@@ -122,7 +122,7 @@ irm https://raw.githubusercontent.com/caiqianzhang/opencode-go-proxy/main/script
 菜单：
 
 - `1`：使用远端代理（需要输入你的 HTTPS `base_url`）
-- `2`：使用本机代理（仅 Linux systemd）
+- `2`：使用本机二进制代理（可选，非 Docker）
 - `9`：恢复最近一次备份
 
 Windows 的 `setup.ps1` 当前支持 `remote` 和 `restore`；本机代理模式请使用 WSL 或 Linux。
@@ -132,10 +132,12 @@ Windows 的 `setup.ps1` 当前支持 `remote` 和 `restore`；本机代理模式
 ```toml
 [model_providers.opencode-go]
 name = "OpenCode Go"
-base_url = "https://<your-proxy-host>:9876/codex/v1"
+base_url = "https://<your-proxy-endpoint>/codex/v1"
 wire_api = "responses"
 experimental_bearer_token = "<client token>"
 ```
+
+`base_url` 是你实际对外暴露的完整 HTTPS 地址，端口由部署决定，不要在文档里写死。
 
 脚本会优先复用 `~/.codex/models.newapi.json` 或 `~/.codex/models.json` 作为模型目录。
 如果两者都不存在，会安装内置的最小目录
@@ -149,7 +151,7 @@ experimental_bearer_token = "<client token>"
 
 ```bash
 scripts/setup.sh --mode remote \
-  --base-url https://<your-proxy-host>:9876/codex/v1 \
+  --base-url https://<your-proxy-endpoint>/codex/v1 \
   --token "$PROXY_CLIENT_TOKEN" \
   --install-catalog --yes
 ```
@@ -163,10 +165,11 @@ scripts/setup.sh --mode remote \
 ## Docker Compose 独立部署
 
 仓库提供了一套独立栈：[deploy/compose](deploy/compose)。
-它会同时启动 proxy 和 Caddy，只有 Caddy 对外监听 9876。
+它会同时启动 proxy 和 Caddy。Caddy 容器内部监听 9876，宿主机端口由
+`PROXY_HTTPS_PORT` 决定。
 
-注意：现有 120 服务器上的 9876 已经被 `new-api` 的 Caddy 占用。不要在同一个
-端口上再启动一套 Caddy；那种情况应把 proxy 加入现有 Compose，并扩展现有 Caddyfile。
+注意：如果宿主机目标端口已经被其他 Caddy 占用，不要再在同一端口启动第二套
+Caddy；那种情况应把 proxy 加入现有 Compose，并扩展现有 Caddyfile。
 
 新服务器上的步骤：
 
@@ -185,13 +188,15 @@ chmod 600 opencode-go-proxy.env
 Codex 配置：
 
 ```toml
-base_url = "https://<server-ip>:9876/codex/v1"
+base_url = "https://<server-ip>:<host-port>/codex/v1"
 ```
 
-如果宿主机想用其他端口，例如 7000：
+如果宿主机想用其他端口，例如 7000，修改 `deploy/compose/.env`：
 
 ```bash
-PROXY_HTTPS_PORT=7000 docker compose up -d --build
+PROXY_HTTPS_PORT=7000
+# 然后重新启动
+./start.sh
 ```
 
 客户端需要信任 `deploy/compose/certs/ca.crt`。私钥、证书和 env 文件都已被
@@ -225,45 +230,55 @@ Codex 侧把 `experimental_bearer_token` 设成这个 client token；代理会�
 `OPENCODE_GO_API_KEY` 覆盖发往上游的 Authorization。否则任何能访问该端口的人
 都可以使用你的上游 key。
 
-## 开机自启（systemd user service）
+## Docker Compose 开机自启（推荐）
 
-`deploy/install.sh` 会把二进制安装到 `~/.local/bin/opencode-go-proxy`，写入服务单元、
-保存密钥、启用并重启服务，之后每次登录自动运行。
-
-```bash
-cd /home/you/zcq/opencode_go_proxy
-export OPENCODE_GO_API_KEY='oc_sk_...'
-bash deploy/install.sh
-```
-
-密钥单独存放在 `~/.config/opencode-go-proxy.env`（权限 600），不写进 unit 文件。
-重复执行是安全的：会更新二进制和密钥，并显式重启服务。
-
-服务监听地址和入站 token 也通过环境变量配置：
+[deploy/compose/docker-compose.yml](deploy/compose/docker-compose.yml) 中的 proxy 和
+Caddy 都设置了 `restart: unless-stopped`。只要 Docker daemon 开机启动，这套栈就会
+自动恢复：
 
 ```bash
-export PROXY_LISTEN='0.0.0.0:8787'
-export PROXY_CLIENT_TOKEN='a-long-random-token'
-bash deploy/install.sh
+sudo systemctl enable --now docker
+cd deploy/compose
+./start.sh
 ```
 
-安装脚本会把它们写入同一个 env 文件。默认仍是 `127.0.0.1:8787`。
-
-常用命令：
+验证：
 
 ```bash
-systemctl --user status opencode-go-proxy     # 查看状态
-systemctl --user restart opencode-go-proxy    # 重启（改了配置或换了 key 之后）
-systemctl --user stop opencode-go-proxy       # 停止
-journalctl --user -u opencode-go-proxy -f     # 跟踪日志
-systemctl --user disable --now opencode-go-proxy  # 取消自启并停止
+docker compose ps
+systemctl is-enabled docker
 ```
 
-注意：默认情况下 user service 只在你登录期间运行，注销后停止。若希望注销或重启后仍自动运行：
+这是服务器上最推荐的方式：不需要额外维护 user service，也不会因为用户注销而停止。
+
+### 可选：用 systemd 管理整套 Compose
+
+如果希望 systemd 明确负责整套栈的启动顺序和 `up/down`，可以使用
+[deploy/compose/opencode-go-proxy-compose.service](deploy/compose/opencode-go-proxy-compose.service)
+模板：
 
 ```bash
-sudo loginctl enable-linger you
+sudo cp deploy/compose/opencode-go-proxy-compose.service \
+  /etc/systemd/system/opencode-go-proxy-compose.service
+sudo sed -i "s|/path/to/opencode-go-proxy|$PWD|g" \
+  /etc/systemd/system/opencode-go-proxy-compose.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now opencode-go-proxy-compose
 ```
+
+这个单元适用于 rootful Docker。若使用 rootless Docker，应改成 `systemctl --user`
+单元，并按需执行：
+
+```bash
+sudo loginctl enable-linger "$USER"
+```
+
+### 可选：非 Docker 本地服务
+
+`deploy/install.sh` 仍然保留，用于 `scripts/setup.sh --mode local` 的本机二进制模式：
+它把二进制安装到 `~/.local/bin/opencode-go-proxy`，并使用 systemd user service。
+这条路径适合临时本机使用，不推荐作为服务器上的标准部署方式；服务器请优先使用上面的
+Docker Compose。
 
 参数：
 

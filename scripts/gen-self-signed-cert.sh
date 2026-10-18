@@ -122,4 +122,4 @@ echo "  Windows:"
 echo "    certutil -addstore -user Root \"${OUT_DIR}/ca.crt\""
 echo
 echo "Or let setup.sh save the cert and print the platform-specific command:"
-echo "  scripts/setup.sh --mode remote --base-url https://<host>:9876/codex/v1 --ca-cert \"${OUT_DIR}/ca.crt\""
+echo "  scripts/setup.sh --mode remote --base-url https://<host>:<port>/codex/v1 --ca-cert \"${OUT_DIR}/ca.crt\""

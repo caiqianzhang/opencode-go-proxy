@@ -7,7 +7,7 @@
 #   9 = restore the most recent config backup
 #
 # Non-interactive examples:
-#   setup.sh --mode remote --base-url https://your-proxy-host:9876/codex/v1 \
+#   setup.sh --mode remote --base-url https://your-proxy-host:<port>/codex/v1 \
 #            --token "$PROXY_CLIENT_TOKEN" --yes
 #   setup.sh --mode local --api-key "$OPENCODE_GO_API_KEY" --yes
 #   setup.sh --mode restore --yes
@@ -470,7 +470,7 @@ done
 if [ -z "$MODE" ]; then
   head1 "OpenCode Go × Codex 配置"
   info "  1. 使用远端代理（推荐）"
-  info "  2. 使用本机代理服务"
+  info "  2. 使用本机二进制代理（可选，非 Docker）"
   info "  9. 恢复首次安装前备份（original）"
   read_tty MODE "输入 1 / 2 / 9: "
   case "$MODE" in
@@ -489,7 +489,7 @@ case "$MODE" in
   remote)
     BASE_URL="${BASE_URL:-$DEFAULT_REMOTE_BASE_URL}"
     if [ -z "$BASE_URL" ]; then
-      read_tty BASE_URL "请输入远端 proxy base URL（例如 https://your-host:9876/codex/v1）: "
+      read_tty BASE_URL "请输入远端 proxy base URL（例如 https://your-host:<port>/codex/v1）: "
     fi
     [ -n "$BASE_URL" ] || die "remote base URL 不能为空。"
     if [ -z "$TOKEN" ]; then

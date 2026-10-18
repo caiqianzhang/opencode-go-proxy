@@ -351,7 +351,7 @@ if ($Mode -ne 'remote') {
 }
 
 if (-not $BaseUrl) {
-    $BaseUrl = Read-Host '请输入远端 proxy base URL（例如 https://your-host:9876/codex/v1）'
+    $BaseUrl = Read-Host '请输入远端 proxy base URL（例如 https://your-host:<port>/codex/v1）'
 }
 if (-not $BaseUrl) { Die 'base URL 不能为空。' }
 
